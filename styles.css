@@ -27,6 +27,15 @@ body {
   color: #d93025;
 }
 
+.repo-link {
+  color: #0e6efd;
+  text-decoration: none;
+}
+
+.repo-link:hover {
+  text-decoration: underline;
+}
+
 .panel {
   background: #fff;
   border-radius: 12px;
