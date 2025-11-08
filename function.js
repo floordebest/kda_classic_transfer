@@ -271,24 +271,26 @@ async function submitTransfer({
     [senderAccount, recipient, { decimal: amountLiteral }]
   );
 
-  const cmd = {
-    keyPairs: {
-      publicKey: senderKey,
-      secretKey: finalPrivateKey,
-      clist: [gasCap["cap"], transferCap["cap"]],
+  const cmd = [
+    {
+      keyPairs: {
+        publicKey: senderKey,
+        secretKey: finalPrivateKey,
+        clist: [gasCap["cap"], transferCap["cap"]],
+      },
+      pactCode: pactCode,
+      meta: Pact.lang.mkMeta(
+        senderAccount,
+        chainId,
+        GAS_PRICE,
+        GAS_LIMIT,
+        creationTime(),
+        TTL
+      ),
+      networkId: NETWORK_ID,
     },
-    pactCode: pactCode,
-    meta: Pact.lang.mkMeta(
-      senderAccount,
-      chainId,
-      GAS_PRICE,
-      GAS_LIMIT,
-      creationTime(),
-      TTL
-    ),
-    networkId: NETWORK_ID,
-  };
-  const response = await Pact.fetch.local(
+  ];
+  const response = await Pact.fetch.send(
     cmd,
     `${API_HOST}/chain/${chainId}/pact`
   );
