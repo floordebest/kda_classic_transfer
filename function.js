@@ -1,485 +1,326 @@
-var creationTime = () => Math.round(new Date().getTime() / 1000) - 15; // Creates a timestamp
+const NETWORK_ID = "mainnet01";
+const API_HOST = "https://api.chainweb.com/chainweb/0.0/mainnet01";
+const CHAIN_IDS = Array.from({ length: 20 }, (_, i) => i.toString());
+const GAS_PRICE = 0.00000001;
+const GAS_LIMIT = 1200;
+const TTL = 28800;
 
-function loadAccount() {
-  const account = localStorage.getItem("account");
-  const bond = localStorage.getItem("bondName");
+const state = {
+  account: "",
+  balances: new Map(),
+};
 
-  if (account) {
-    //localStorage.clear();
-    //console.log(account);
-    document.getElementById("enterBond").style.display = "none";
-    getBond();
-  } else {
-    document.getElementById("showBonds").style.display = "none";
-    document.getElementById("logoutButton").style.display = "none";
+const creationTime = () => Math.round(Date.now() / 1000) - 15;
+
+document.addEventListener("DOMContentLoaded", () => {
+  populateChainSelect();
+  attachEventHandlers();
+});
+
+function attachEventHandlers() {
+  const balanceForm = document.getElementById("balanceForm");
+  const transferForm = document.getElementById("transferForm");
+
+  balanceForm.addEventListener("submit", handleBalanceSubmit);
+  transferForm.addEventListener("submit", handleTransferSubmit);
+}
+
+function populateChainSelect() {
+  const select = document.getElementById("chainSelect");
+  select.innerHTML = "";
+  CHAIN_IDS.forEach((id) => {
+    const option = document.createElement("option");
+    option.value = id;
+    option.textContent = `Chain ${id}`;
+    select.appendChild(option);
+  });
+}
+
+async function handleBalanceSubmit(event) {
+  event.preventDefault();
+  const addressInput = document.getElementById("addressInput");
+  const balanceStatus = document.getElementById("balanceStatus");
+  const balancesContainer = document.getElementById("balancesContainer");
+
+  const account = addressInput.value.trim();
+  if (!account) {
+    balanceStatus.textContent = "Please enter a Kadena account.";
+    balancesContainer.classList.add("hidden");
+    return;
+  }
+
+  state.account = account;
+  balanceStatus.textContent = "Fetching balances…";
+  balancesContainer.classList.add("hidden");
+
+  try {
+    const balances = await fetchBalances(account);
+    state.balances = balances;
+    renderBalances(balances);
+    balanceStatus.textContent = "";
+  } catch (error) {
+    console.error(error);
+    balanceStatus.textContent =
+      "We could not retrieve balances. Please verify the account and try again.";
   }
 }
 
-function logout() {
-  localStorage.clear();
-  window.location.reload()
+async function fetchBalances(account) {
+  const results = await Promise.allSettled(
+    CHAIN_IDS.map((chainId) => fetchChainBalance(account, chainId))
+  );
+
+  const balances = new Map();
+  results.forEach((result, index) => {
+    const chainId = CHAIN_IDS[index];
+    if (result.status === "fulfilled") {
+      balances.set(chainId, result.value);
+    } else {
+      balances.set(chainId, null);
+    }
+  });
+  return balances;
 }
 
-async function getBond()  {
-    const account = localStorage.getItem("account");
-    var bondName;
-    if (account) {
-      bondName = localStorage.getItem("bondName");
+async function fetchChainBalance(account, chainId) {
+  const cmd = {
+    networkId: NETWORK_ID,
+    pactCode: `(coin.get-balance "${account}")`,
+    meta: Pact.lang.mkMeta(
+      "",
+      chainId,
+      GAS_PRICE,
+      GAS_LIMIT,
+      creationTime(),
+      TTL
+    ),
+  };
+
+  const response = await Pact.fetch.local(
+    cmd,
+    `${API_HOST}/chain/${chainId}/pact`
+  );
+
+  if (response.result.status === "success") {
+    return Number(response.result.data);
+  }
+
+  if (
+    response.result.error &&
+    response.result.error.message &&
+    response.result.error.message.includes("row found")
+  ) {
+    return 0;
+  }
+
+  throw new Error(response.result.error?.message || "Unknown error");
+}
+
+function renderBalances(balances) {
+  const tbody = document.getElementById("balancesTable").querySelector("tbody");
+  const totalBalance = document.getElementById("totalBalance");
+  const balancesContainer = document.getElementById("balancesContainer");
+
+  tbody.innerHTML = "";
+  let total = 0;
+
+  CHAIN_IDS.forEach((chainId) => {
+    const balance = balances.get(chainId);
+    const row = document.createElement("tr");
+
+    const chainCell = document.createElement("td");
+    chainCell.textContent = chainId;
+
+    const balanceCell = document.createElement("td");
+    if (balance === null) {
+      balanceCell.textContent = "Error";
+      balanceCell.style.color = "#d93025";
     } else {
-      bondName = document.getElementById("bondName").value;
+      balanceCell.textContent = formatAmount(balance);
+      total += balance || 0;
     }
 
-    const cmd = {
-        pactCode: `(relay.pool.get-bond (read-msg 'bond))`,
-        meta: Pact.lang.mkMeta("", "2", 0.00000001, 60000, creationTime(), 1000),
-        chainId: "2",
-        envData: {
-          bond: bondName
-        }
-      }
+    row.appendChild(chainCell);
+    row.appendChild(balanceCell);
+    tbody.appendChild(row);
+  });
+
+  totalBalance.textContent = `Total balance: ${formatAmount(total)} KDA`;
+  balancesContainer.classList.remove("hidden");
+}
+
+function formatAmount(amount) {
+  if (amount === null || amount === undefined || Number.isNaN(amount)) {
+    return "0";
+  }
+  return Number(amount).toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6,
+  });
+}
+
+async function handleTransferSubmit(event) {
+  event.preventDefault();
+
+  const transferStatus = document.getElementById("transferStatus");
+  const chainSelect = document.getElementById("chainSelect");
+  const recipientInput = document.getElementById("recipientInput");
+  const amountInput = document.getElementById("amountInput");
+  const privateKeyInput = document.getElementById("privateKeyInput");
+  const addressInput = document.getElementById("addressInput");
+
+  const senderAccount = (state.account || addressInput.value || "").trim();
+  const chainId = chainSelect.value;
+  const recipient = recipientInput.value.trim();
+  const amountValue = amountInput.value.trim();
+  const privateKey = privateKeyInput.value.trim();
+
+  if (!senderAccount) {
+    transferStatus.textContent =
+      "Please fetch balances first or enter the sender account.";
+    return;
+  }
+
+  if (!recipient) {
+    transferStatus.textContent = "Please enter a recipient account.";
+    return;
+  }
+
+  const amount = Number(amountValue);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    transferStatus.textContent = "Please enter a valid transfer amount.";
+    return;
+  }
+
+  if (!privateKey) {
+    transferStatus.textContent =
+      "Please enter the private key for the sender account.";
+    return;
+  }
+
+  try {
+    transferStatus.textContent = "Submitting transfer…";
+    const requestKey = await submitTransfer({
+      senderAccount,
+      recipient,
+      amount,
+      chainId,
+      privateKey,
+    });
+    transferStatus.textContent = `Transfer submitted. Request key: ${requestKey}`;
+  } catch (error) {
+    console.error(error);
+    transferStatus.textContent = `Transfer failed: ${error.message || error}`;
+  }
+}
+
+async function submitTransfer({
+  senderAccount,
+  recipient,
+  amount,
+  chainId,
+  privateKey,
+}) {
+  const senderKey = extractPublicKey(senderAccount);
+  if (!senderKey) {
+    throw new Error("Could not extract a public key from the sender account.");
+  }
+
+  let finalPrivateKey = "";
+
+  if (privateKey.length !== 64 && privateKey.length === 128) {
+    const keypair = privateKey.split(senderKey);
     try {
-      let data = await Pact.fetch.local(cmd, "https://api.chainweb.com/chainweb/0.0/mainnet01/chain/2/pact");
-      if (data.result.status === "success") {
-        if (!account) {
-          localStorage.setItem("bondName", bondName);
-          localStorage.setItem("bondOwnerKey", data.result.data.guard.keys[0].toString());
-          localStorage.setItem("account", data.result.data.account.toString());
-        }
-        document.getElementById("enterBond").style.display = "none";
-        document.getElementById("showBonds").style.display = "contents";
-        document.getElementById("logoutButton").style.display = "contents";
-        document.getElementById("showBonds").innerHTML += 
-        `
-          <div id="bondData">
-            <label id="bondTitle">
-              <b>Your Bond:</b> <i>${bondName}</i>
-            </label><br>
-            <label id="bondLabel">
-              Found Bond, Renew Date: ${data.result.data.date.timep}
-            </label><br>
-            <button onclick="renewBondXWallet(0, 0)" type="button">Renew through X-Wallet</button>
-            <button onclick="renewBondXWallet(0, 1)" type="button">Renew through X-Wallet Gasfree</button>
-            <button onclick="renewBond(0,0)" type="button">Renew, I pay for Gas</button>
-            <button onclick="renewBond(0,1)" type="button">Renew, try GasStation</button>
-            <button onclick="closeBond(0)" type="button">Close/Stop bond</button>
-            <p id="pLabel">
-              <label id="resultLabel0"></label>
-            </p>
-            <p>
-            <input id="privKey" placeholder="Enter PrivateKey"/>
-            <button onclick="signPrivKey(0)" type="button">Renew with Private Key</button>
-            </p>
-          </div>
-        `
+      const keyPair = Pact.crypto.restoreKeyPairFromSecretKey(keypair[0]);
+      if (keyPair.publicKey === senderKey) {
+        finalPrivateKey = keyPair.secretKey;
       }
-    } catch (e){
-      console.log(e)
+      console.log("Keypair1 found", keypair);
+    } catch (error) {
+      // No private key found
+      console.log(error);
     }
-  }
 
-  async function searchBond()  {
-    const account = document.getElementById("accName").value;
-
-    // Fetch All Bonds
-    const cmd = {
-      pactCode: `(use relay.pool) (map (get-keyed-bond) (bond-keys))`,
-      meta: Pact.lang.mkMeta("", "2", 0.00000001, 60000, creationTime(), 1000),
-      chainId: "2",
-    }
     try {
-      let data = await Pact.fetch.local(cmd, "https://api.chainweb.com/chainweb/0.0/mainnet01/chain/2/pact");
-      if (data.result.status === "success") {
-        const resData = data.result.data;
-        localStorage.setItem("bonds", JSON.stringify(resData));
-        for (var i = 0; i < resData.length; i++) {
-          const accountName = resData[i].bond.account;
-          if (accountName.includes(account)) {
-            document.getElementById("enterBond").style.display = "none";
-            document.getElementById("showBonds").style.display = "contents";
-            document.getElementById("logoutButton").style.display = "contents";
-            if (resData[i].bond.terminated == false) {
-              document.getElementById("showBonds").innerHTML += 
-              `
-                <div id="bondData">
-                  <label id="bondTitle">
-                    <div id="bond${i}>" 
-                      <b>Your Bond:</b> <i>${resData[i].key}</i>
-                    </div>
-                  </label><br>
-                  <label id="bondLabel">
-                    Renew Date: ${resData[i].bond.date.timep}
-                  </label><br>
-                  <button onclick="renewBondXWallet(${i}, 0)" type="button">Renew through X-Wallet</button>
-                  <button onclick="renewBondXWallet(${i}, 1)" type="button">Renew through X-Wallet Gasfree</button>
-                  <button onclick="renewBond(${i}, 0)" type="button">Renew, I pay for Gas</button>
-                  <button onclick="renewBond(${i}, 1)" type="button">Renew, try GasStation</button>
-                  <button onclick="closeBond(${i})" type="button">Close/Stop bond</button>
-                  <p id="pLabel">
-                    <label id="resultLabel${i}"></label>
-                  </p>
-                  <p>
-                  <input id="privKey" placeholder="Enter PrivateKey"/>
-                  <button onclick="signPrivKey(${i})" type="button">Renew with Private Key</button>
-                  </p>
-                </div>
-              `
-            } else {
-              document.getElementById("showBonds").innerHTML += 
-              `
-              <div id="bondData">
-                <label id="bondTitle">
-                  <b>Your Bond:</b> <i>${resData[i].key}</i>
-                </label><br>
-                <label id="bondLabel">
-                  Bond is no longer active, Latest Renew Date: ${resData[i].bond.date.timep}
-                </label><br>
-              </div>
-              `
-            }
-          }
-        }
+      const keyPair = Pact.crypto.restoreKeyPairFromSecretKey(keypair[1]);
+      if (keyPair.publicKey === senderKey) {
+        finalPrivateKey = keyPair.secretKey;
       }
-    } catch (e){
-      console.log("Error found: " + e);
+      console.log("Keypair2 found", keypair);
+    } catch (error) {
+      // No private key found
+      console.log(error);
     }
+
+    console.log(finalPrivateKey);
   }
 
-  async function signPrivKey(id) {
-    var bondName;
-    var pubKeyToSign;
-    var account;
+  console.log(finalPrivateKey);
 
-    const privKey = document.getElementById("privKey").value;
-
-    if (id) {
-      const bonds = JSON.parse(localStorage.getItem("bonds"));
-      bondName = bonds[id].key;
-      pubKeyToSign = bonds[id].bond.guard.keys[0];
-      account = bonds[id].bond.account;
-    } else {
-      id = 0;
-      bondName = localStorage.getItem("bondName");
-      pubKeyToSign = localStorage.getItem("bondOwnerKey");
-      account = localStorage.getItem("account");
+  if (finalPrivateKey.length !== 64) {
+    if (privateKey.length !== 64) {
+      throw new Error(
+        "Invalid private key. Please enter the private key for the sender account."
+      );
     }
-
-    if (!privKey) {
-      alert("Please Enter a valid private key")
-    }
-
-    const cmds = [
-      {
-        networkId: "mainnet01",
-        type: "exec",
-        keyPair : {
-          publicKey: pubKeyToSign,
-          secretKey: privKey,
-          clist: [Pact.lang.mkCap("Bonder", "Bond", "relay.pool.BONDER", [bondName]), 
-        ]
-        },
-        pactCode: "(relay.pool.renew (read-msg 'bond))",
-        envData: {
-          bond: bondName
-        },
-        meta: Pact.lang.mkMeta(account, "2", 0.00000001, 20000, creationTime(), 24800)
-      }
-    ]
-
-    const sign = await Pact.fetch.send(cmds, "https://api.chainweb.com/chainweb/0.0/mainnet01/chain/2/pact")
-    if (sign.requestKeys) {
-      document.getElementById("resultLabel" + id).innerHTML = "Send to blockchain, request key: " + sign.requestKeys + "\n..... Waiting for result....";
-      localStorage.setItem("tx", sign.requestKeys)  
-    } else {
-      document.getElementById("resultLabel" + id).innerHTML = `Something is wrong with signing:  ${sign}`;
-    }
-    getTX(id);
+    finalPrivateKey = privateKey;
   }
 
-  async function renewBond(id, gasfree) {
-    var bondName;
-    var pubKeyToSign;
-    var account;
+  console.log(finalPrivateKey);
 
-    if (id) {
-      const bonds = JSON.parse(localStorage.getItem("bonds"));
-      bondName = bonds[id].key;
-      pubKeyToSign = bonds[id].bond.guard.keys[0];
-      account = bonds[id].bond.account;
-    } else {
-      id = 0;
-      bondName = localStorage.getItem("bondName");
-      pubKeyToSign = localStorage.getItem("bondOwnerKey");
-      account = localStorage.getItem("account");
-    }
+  const amountLiteral = formatAmountLiteral(amount);
+  const pactCode = `(coin.transfer "${senderAccount}" "${recipient}" ${amountLiteral})`;
 
-    var caplist = [Pact.lang.mkCap("Bonder", "Bond", "relay.pool.BONDER", [bondName])]
+  const gasCap = Pact.lang.mkCap("Gas payer", "Pay for gas", "coin.GAS", []);
+  const transferCap = Pact.lang.mkCap(
+    "Transfer",
+    "Transfer coin",
+    "coin.TRANSFER",
+    [senderAccount, recipient, { decimal: amountLiteral }]
+  );
 
-    if (gasfree != 0) {
-      caplist.push(Pact.lang.mkCap("Gas Station", "free gas", "relay.gas-station.GAS_PAYER", ["free-gas", {int: 1}, 1.0]));
-    }
+  const cmd = {
+    keyPairs: {
+      publicKey: senderKey,
+      secretKey: finalPrivateKey,
+      clist: [gasCap["cap"], transferCap["cap"]],
+    },
+    pactCode: pactCode,
+    meta: Pact.lang.mkMeta(
+      senderAccount,
+      chainId,
+      GAS_PRICE,
+      GAS_LIMIT,
+      creationTime(),
+      TTL
+    ),
+    networkId: NETWORK_ID,
+  };
+  const response = await Pact.fetch.local(
+    cmd,
+    `${API_HOST}/chain/${chainId}/pact`
+  );
 
-    document.getElementById("resultLabel" + id).innerHTML = "Continue in Chainweaver or Zelcore and come back when finished.... Waiting for wallet response";
+  console.log(response);
 
-    const cmd = {
-        pactCode: "(relay.pool.renew (read-msg 'bond))",
-        caps: caplist,
-        envData: {
-          bond: bondName
-        },
-        sender: gasfree == 0 ? account : 'relay-free-gas',
-        chainId: "2",
-        gasLimit: 20000,
-        gasPrice: 0.00000001,
-        signingPubKey: pubKeyToSign,
-        networkId: "mainnet01",
-        ttl: 24800,
-        nonce:"Floppie Renew Bonds"
-      }
-
-      const sign = await Pact.wallet.sign(cmd);
-      if (sign) {
-        const tx = await fetch("https://api.chainweb.com/chainweb/0.0/mainnet01/chain/2/pact/api/v1/send", {
-            headers: {"Content-Type" : "application/json"},
-            body: JSON.stringify({"cmds": [sign]}),
-            method: "POST"
-        })
-        if (tx.ok) {
-            const data = await tx.json();
-            document.getElementById("resultLabel" + id).innerHTML = "Send to blockchain, request key: " + data.requestKeys + "\n..... Waiting for result....";
-            localStorage.setItem("tx", data.requestKeys)  
-        }
-      } else {
-        document.getElementById("resultLabel" + id).innerHTML = "Something is wrong with signing, or signing got cancelled. You can try again";
-      }
-      getTX(id);
-    }
-
-    async function renewBondXWallet(id, gasfree) {
-      var bondName;
-      var pubKeyToSign;
-      var account;
-  
-  
-      if (id) {
-        const bonds = JSON.parse(localStorage.getItem("bonds"));
-        bondName = bonds[id].key;
-        pubKeyToSign = bonds[id].bond.guard.keys[0];
-        account = bonds[id].bond.account;
-      } else {
-        id = 0;
-        bondName = localStorage.getItem("bondName");
-        pubKeyToSign = localStorage.getItem("bondOwnerKey");
-        account = localStorage.getItem("account");
-      }
-  
-      var caplist = [Pact.lang.mkCap("Bonder", "Bond", "relay.pool.BONDER", [bondName])]
-  
-      if (gasfree != 0) {
-        caplist.push(Pact.lang.mkCap("Gas Station", "free gas", "relay.gas-station.GAS_PAYER", ["free-gas", {int: 1}, 1.0]));
-      }
-  
-      document.getElementById("resultLabel" + id).innerHTML = "Continue in X-Wallet and come back when finished.... Waiting for wallet response";
-  
-      const cmd = {
-          pactCode: "(relay.pool.renew (read-msg 'bond))",
-          caps: caplist,
-          envData: {
-            bond: bondName
-          },
-          sender: gasfree == 0 ? account : 'relay-free-gas',
-          chainId: "2",
-          gasLimit: 20000,
-          gasPrice: 0.00000001,
-          signingPubKey: pubKeyToSign,
-          networkId: "mainnet01",
-          ttl: 24800,
-          nonce:"Floppie Renew Bonds"
-        }
-
-        try {
-          // Re-establish X-Wallet connectiong
-          let connectionStatus = await XwalletConnected();
-
-          console.log(connectionStatus + " to X-Wallet");
-
-          // If connected send command to sign
-          if (connectionStatus === "Connected") {
-              const signingCommand = await window.kadena.request({
-                  method: 'kda_requestSign',
-                  data: {
-                      networkId: "mainnet01",
-                      signingCmd: cmd
-                  }
-              })
-              console.log(signingCommand)
-              if (signingCommand.status === "success") {
-                const tx = await fetch("https://api.chainweb.com/chainweb/0.0/mainnet01/chain/2/pact/api/v1/send", {
-                  headers: {"Content-Type" : "application/json"},
-                  body: JSON.stringify({"cmds": [signingCommand.signedCmd]}),
-                  method: "POST"
-                })
-                if (tx.ok) {
-                  const data = await tx.json();
-                  document.getElementById("resultLabel" + id).innerHTML = "Send to blockchain, request key: " + data.requestKeys + "\n..... Waiting for result....";
-                  localStorage.setItem("tx", data.requestKeys)  
-                }
-                } else {
-                document.getElementById("resultLabel" + id).innerHTML = "Something is wrong with signing, or signing got cancelled. You can try again";
-                }
-                getTX(id);
-          } else {
-              throw "Error, can't connect to X-Wallet"
-          }
-      } catch (error) {
-          alert(error)
-      }
+  if (response.requestKeys && response.requestKeys.length > 0) {
+    return response.requestKeys[0];
   }
 
-  async function closeBond(id) {
-    var bondName;
-    var pubKeyToSign;
-    var account;
-
-    if (id) {
-      const bonds = JSON.parse(localStorage.getItem("bonds"));
-      bondName = bonds[id].key;
-      pubKeyToSign = bonds[id].bond.guard.keys[0];
-      account = bonds[id].bond.account;
-    } else {
-      id = 0;
-      bondName = localStorage.getItem("bondName");
-      pubKeyToSign = localStorage.getItem("bondOwnerKey");
-      account = localStorage.getItem("account");
-    }
-
-    document.getElementById("resultLabel" + id).innerHTML = "Continue in Chainweaver or Zelcore and come back when finished.... Waiting for wallet response";
-
-
-    const cmd = {
-      pactCode: `(relay.pool.unbond (read-msg 'bond))`,
-      caps: [
-        //Pact.lang.mkCap("Gas Station", "free gas", "relay.gas-station.GAS_PAYER", ["free-gas", {int: 1}, 1.0]),
-        Pact.lang.mkCap("Bonder", "Bond", "relay.pool.BONDER", [bondName])
-      ],
-      sender: account,
-      signingPubKey: pubKeyToSign,
-      gasLimit: 22000,
-      gasPrice: 0.00000001,
-      networkId: "mainnet01",
-      chainId: "2",
-      ttl: 1500,
-      envData: {
-        bond: bondName
-      }
-    }
-    const sign = await Pact.wallet.sign(cmd);
-    if (sign) {
-      const tx = await fetch("https://api.chainweb.com/chainweb/0.0/mainnet01/chain/2/pact/api/v1/send", {
-          headers: {"Content-Type" : "application/json"},
-          body: JSON.stringify({"cmds": [sign]}),
-          method: "POST"
-      })
-      if (tx.ok) {
-          const data = await tx.json();
-          document.getElementById("resultLabel" + id).innerHTML = "Send to blockchain, request key: " + data.requestKeys + "\n..... Waiting for result....";
-          localStorage.setItem("tx", data.requestKeys)  
-      }
-    } else {
-      document.getElementById("resultLabel" + id).innerHTML = "Something is wrong with signing, or signing got cancelled. You can try again";
-
-    }
-    getTX(id);
-  }
-
-  async function getTX(id) {
-      console.log("Listening for TX's...")
-      const tx = localStorage.getItem("tx");
-      
-      if (tx != null) {
-          try {
-              const listen = await fetch("https://api.chainweb.com/chainweb/0.0/mainnet01/chain/2/pact/api/v1/listen", {
-                  headers: {"Content-Type" : "application/json"},
-                  body: JSON.stringify({"listen" : tx}),
-                  method: "POST"
-              })
-          
-              // Wait for the result of the transaction with the TX id (listen)
-              const result = await listen.json();
-              //console.log(result);
-              if (id) {
-                if (result.result.error) {
-                  document.getElementById("resultLabel" + id).innerHTML = tx + " : <br>"  + result.result.status + " : <br>" + result.result.error.message;
-                }
-                else {
-                  document.getElementById("resultLabel" + id).innerHTML = tx + " : " + result.result.status;
-                }
-              } else {
-                  if (result.result.error) {
-                    document.getElementById("resultLabel").innerHTML = tx + " : <br>"  + result.result.status + " : <br>" + result.result.error.message;
-                  }
-                else {
-                    document.getElementById("resultLabel").innerHTML = tx + " : " + result.result.status;
-                  }
-              }
-              if (result.result.error) {
-                  document.getElementById("resultLabel").innerHTML = tx + " : <br>"  + result.result.status + " : <br>" + result.result.error.message;
-              }
-              else {
-                  document.getElementById("resultLabel").innerHTML = tx + " : " + result.result.status;
-              }
-              
-              localStorage.removeItem("tx");
-          } catch (error) {
-              // Run function again till result
-              if (id) {
-                  document.getElementById("resultLabel" + id).innerHTML = tx + " : could net get a response, trying again.. please hold";
-              } else {
-                  document.getElementById("resultLabel").innerHTML = tx + " : could net get a response, trying again.. please hold";
-              }
-              getTX();
-          }
-      } else {
-          console.log("No TX's in memory")
-      }
-  }
-
-  async function XwalletConnected() {
-
-    if (window.kadena.isKadena) {
-        console.log("XWallet Available")
-        
-        const status = await kadena.request({
-            method: 'kda_checkStatus',
-            networkId: "mainnet01",
-        })
-        
-        if (status.message.includes('Connected')) {
-            return "Connected"
-        } else {
-            // retry connection: 
-            await window.kadena.request({
-                method: "kda_disconnect",
-                networkId: "mainnet01",
-            });
-
-            await kadena.request({
-                method: 'kda_connect',
-                networkId: "mainnet01",
-              });
-        
-            const status = await kadena.request({
-                method: 'kda_checkStatus',
-                networkId: "mainnet01",
-            })
-
-            if (status.message.includes('Connected')) {
-                return "Connected"
-            } else {
-                throw "Can't connect to X-Wallet, restart your browser and try again"
-            }
-        }
-    } else {
-        throw "Not Available"
-    }    
+  throw new Error("Unexpected response from the network.");
 }
-    
+
+function extractPublicKey(account) {
+  if (account.startsWith("k:")) {
+    return account.slice(2);
+  }
+  if (/^[a-f0-9]{64}$/i.test(account)) {
+    return account;
+  }
+  return null;
+}
+
+function formatAmountLiteral(amount) {
+  const fixed = Number(amount).toFixed(8);
+  return fixed.replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, ".0");
+}

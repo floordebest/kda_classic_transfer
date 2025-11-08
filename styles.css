@@ -1,49 +1,97 @@
+:root {
+  color-scheme: light;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 24px;
+  background: #f4f5f7;
+  color: #1b1f23;
+}
+
 .content {
-    max-width: 1000px;
-    margin: auto;
-    text-align: center;
-    border: 10px blue;
-    font-family: Arial, Helvetica, sans-serif;
-}
-
-#pLabel {
-    color: blue;
-}
-
-#findAccount {
-    text-align: center;
-    padding-top: 5px;
-}
-
-#findBond {
-    margin-left: 15px;
+  max-width: 780px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
 .title {
-    text-transform: uppercase;
+  margin: 0;
+  text-align: center;
 }
 
-#loginPage {
-    padding-top: 10px;
+.subtitle {
+  color: #d93025;
 }
 
-
-
-#bondData {
-    display: inline-block;   
-    text-align: center;
-    width: 100%;
-    border-width:3px;
-    border-style:solid;
-    border-color:grey;
+.panel {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
 }
 
-#bondTitle {
-    display: block;
-    font-size: 12px;
+.panel h2 {
+  margin-top: 0;
 }
 
-#resultLabel {
-    display: block;
-    padding-top: 10;
+.form {
+  display: grid;
+  gap: 12px;
+}
+
+.form label {
+  font-weight: bold;
+  text-align: left;
+}
+
+.form input,
+.form select,
+.form button {
+  padding: 10px 12px;
+  font-size: 16px;
+  border-radius: 6px;
+  border: 1px solid #d0d7de;
+}
+
+.form button {
+  cursor: pointer;
+  background: #0e6efd;
+  color: #fff;
+  border: none;
+  transition: background 0.2s ease;
+}
+
+.form button:hover {
+  background: #0b5ed7;
+}
+
+.status {
+  min-height: 20px;
+  color: #4a5568;
+}
+
+.balances.hidden {
+  display: none;
+}
+
+#balancesTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+#balancesTable th,
+#balancesTable td {
+  padding: 8px;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+}
+
+.total {
+  margin-top: 12px;
+  font-weight: bold;
 }

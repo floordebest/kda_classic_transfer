@@ -1,54 +1,85 @@
 <!DOCTYPE html>
-<!--[if lt IE 7]>      <html class="no-js lt-ie9 lt-ie8 lt-ie7"> <![endif]-->
-<!--[if IE 7]>         <html class="no-js lt-ie9 lt-ie8"> <![endif]-->
-<!--[if IE 8]>         <html class="no-js lt-ie9"> <![endif]-->
-<!--[if gt IE 8]>      <html class="no-js"> <!--<![endif]-->
-<html>
-    <head>
-        <meta charset="utf-8">
-        <meta http-equiv="X-UA-Compatible" content="IE=edge">
-        <title></title>
-        <meta name="description" content="">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <link rel="stylesheet" href="styles.css">
-        <title>Kadena Bond Quick Renew</title>
-        <script src="https://code.jquery.com/jquery-3.1.1.min.js" crossorigin="anonymous"></script>
-        <script src="https://cdn.jsdelivr.net/npm/semantic-ui@2.4.2/dist/semantic.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/anchorme@2.1.2/dist/browser/anchorme.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/pact-lang-api@4.1.2/pact-lang-api-global.min.js"></script>
-        <script src="./function.js"></script>
-    </head>
-    <body onload="loadAccount()">
-        <div class="content">
-            <h1 class="title">Kadena Bond Quick Renew </h1>
-            <div id="logoutButton">
-                <button onclick="logout()" type="button">Search Again</button>
-            </div>
-            <div id="loginPage">
-                <form id="enterBond">
-                    <div id="findBond">
-                        <label id="enterBond">Enter your Bondname:&emsp;&emsp;
-                            <input id="bondName"/>
-                            <button onclick="getBond()" type="button">Get Bond</button>
-                        </label>
-                    </div>
-                    <div id="findAccount">
-                        <label id="enterAcc">Search with accountname:&nbsp;
-                            <input id="accName"/>
-                            <button onclick="searchBond()" type="button">Search</button>
-                        </label>   
-                    </div>
-                </form>
-                <form id="showBonds">
-                    <label id="resultLabel"></label>
-                    <div id="bond">
-                        <br>
-                        
-                    </div>
-                    
-                </form>
-            </div>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kadena Toolkit</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/pact-lang-api@4.1.2/pact-lang-api-global.min.js"></script>
+    <script src="./function.js" defer></script>
+  </head>
+  <body>
+    <main class="content">
+      <h1 class="title">Kadena 'Classic' Transfer Tool</h1>
+      <h3 class="title">(original chain before fork)</h3>
+      <h3 class="title subtitle">USE AT YOUR OWN RISK</h3>
+      <section class="panel">
+        <h2>Check balances</h2>
+        <form id="balanceForm" class="form">
+          <label for="addressInput">Enter your Kadena account</label>
+          <input
+            id="addressInput"
+            name="address"
+            autocomplete="off"
+            placeholder="k:your-public-key"
+          />
+          <button id="fetchBalancesButton" type="submit">Get balances</button>
+        </form>
+        <p id="balanceStatus" class="status"></p>
+        <div id="balancesContainer" class="balances hidden">
+          <table id="balancesTable">
+            <thead>
+              <tr>
+                <th>Chain</th>
+                <th>Balance (KDA)</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <p id="totalBalance" class="total"></p>
         </div>
-    </body>
-    
+      </section>
+
+      <section class="panel">
+        <h2>Transfer KDA</h2>
+        <form id="transferForm" class="form">
+          <label for="chainSelect">From chain</label>
+          <select id="chainSelect" name="chain"></select>
+
+          <label for="recipientInput">Recipient account</label>
+          <input
+            id="recipientInput"
+            name="recipient"
+            autocomplete="off"
+            placeholder="k:recipient-public-key"
+          />
+
+          <label for="amountInput">Amount</label>
+          <input
+            id="amountInput"
+            name="amount"
+            type="number"
+            step="0.00000001"
+            min="0"
+            placeholder="0.0"
+          />
+
+          <label for="privateKeyInput">Private key</label>
+          <input
+            id="privateKeyInput"
+            name="privateKey"
+            autocomplete="off"
+            type="password"
+            placeholder="Enter the private key for the sender account"
+          />
+
+          <button id="submitTransferButton" type="submit">
+            Submit transfer
+          </button>
+        </form>
+        <p id="transferStatus" class="status"></p>
+      </section>
+    </main>
+  </body>
 </html>
