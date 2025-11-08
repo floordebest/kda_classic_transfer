@@ -235,7 +235,6 @@ async function submitTransfer({
       if (keyPair.publicKey === senderKey) {
         finalPrivateKey = keyPair.secretKey;
       }
-      console.log("Keypair1 found", keypair);
     } catch (error) {
       // No private key found
       console.log(error);
@@ -246,16 +245,11 @@ async function submitTransfer({
       if (keyPair.publicKey === senderKey) {
         finalPrivateKey = keyPair.secretKey;
       }
-      console.log("Keypair2 found", keypair);
     } catch (error) {
       // No private key found
       console.log(error);
     }
-
-    console.log(finalPrivateKey);
   }
-
-  console.log(finalPrivateKey);
 
   if (finalPrivateKey.length !== 64) {
     if (privateKey.length !== 64) {
@@ -265,8 +259,6 @@ async function submitTransfer({
     }
     finalPrivateKey = privateKey;
   }
-
-  console.log(finalPrivateKey);
 
   const amountLiteral = formatAmountLiteral(amount);
   const pactCode = `(coin.transfer "${senderAccount}" "${recipient}" ${amountLiteral})`;
