@@ -4,6 +4,7 @@ const CHAIN_IDS = Array.from({ length: 20 }, (_, i) => i.toString());
 const GAS_PRICE = 0.00000001;
 const GAS_LIMIT = 1200;
 const TTL = 28800;
+const EXPLORER_BASE_URL = "https://explorer.chainweb.com/mainnet/tx/";
 
 const state = {
   account: "",
@@ -15,6 +16,7 @@ const creationTime = () => Math.round(Date.now() / 1000) - 15;
 document.addEventListener("DOMContentLoaded", () => {
   populateChainSelect();
   attachEventHandlers();
+  enhanceExternalLinks();
 });
 
 function attachEventHandlers() {
@@ -23,6 +25,16 @@ function attachEventHandlers() {
 
   balanceForm.addEventListener("submit", handleBalanceSubmit);
   transferForm.addEventListener("submit", handleTransferSubmit);
+}
+
+function enhanceExternalLinks() {
+  const externalLinks = document.querySelectorAll('a[data-open-tab="true"]');
+  externalLinks.forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      window.open(link.href, "_blank", "noopener");
+    });
+  });
 }
 
 function populateChainSelect() {
@@ -207,7 +219,21 @@ async function handleTransferSubmit(event) {
       chainId,
       privateKey,
     });
-    transferStatus.textContent = `Transfer submitted. Request key: ${requestKey}`;
+    if (requestKey) {
+      const explorerUrl = `${EXPLORER_BASE_URL}${encodeURIComponent(
+        requestKey
+      )}`;
+      transferStatus.textContent = "Transfer submitted. Request key: ";
+      const link = document.createElement("a");
+      link.href = explorerUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = requestKey;
+      transferStatus.appendChild(link);
+    } else {
+      transferStatus.textContent =
+        "Transfer submitted, but no request key was returned.";
+    }
   } catch (error) {
     console.error(error);
     transferStatus.textContent = `Transfer failed: ${error.message || error}`;
@@ -260,8 +286,21 @@ async function submitTransfer({
     finalPrivateKey = privateKey;
   }
 
+  if (!recipient.startsWith("k:")) {
+    throw new Error(
+      "Invalid recipient account. Please enter a valid Kadena account starting with 'k:'."
+    );
+  }
+
+  const recipientGuard = {
+    "recipient-keyset": {
+      keys: [recipient.slice(2)],
+      pred: "keys-all",
+    },
+  };
+
   const amountLiteral = formatAmountLiteral(amount);
-  const pactCode = `(coin.transfer "${senderAccount}" "${recipient}" ${amountLiteral})`;
+  const pactCode = `(coin.transfer-create "${senderAccount}" "${recipient}" (read-keyset "recipient-keyset") ${amountLiteral})`;
 
   const gasCap = Pact.lang.mkCap("Gas payer", "Pay for gas", "coin.GAS", []);
   const transferCap = Pact.lang.mkCap(
@@ -278,6 +317,7 @@ async function submitTransfer({
         secretKey: finalPrivateKey,
         clist: [gasCap["cap"], transferCap["cap"]],
       },
+      envData: recipientGuard,
       pactCode: pactCode,
       meta: Pact.lang.mkMeta(
         senderAccount,
@@ -317,4 +357,28 @@ function extractPublicKey(account) {
 function formatAmountLiteral(amount) {
   const fixed = Number(amount).toFixed(8);
   return fixed.replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, ".0");
+}
+
+async function getRecipientGuard(recipient, chainId) {
+  const cmd = {
+    networkId: NETWORK_ID,
+    pactCode: `(coin.details "${recipient}")`,
+    meta: Pact.lang.mkMeta(
+      "",
+      chainId,
+      GAS_PRICE,
+      GAS_LIMIT,
+      creationTime(),
+      TTL
+    ),
+  };
+
+  const response = await Pact.fetch.local(
+    cmd,
+    `${API_HOST}/chain/${chainId}/pact`
+  );
+
+  if (response.result.status === "success") {
+    return Number(response.result.data);
+  }
 }
